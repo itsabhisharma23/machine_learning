@@ -105,6 +105,9 @@ if __name__ == "__main__":
     X = data[:,:-1]
     y = data[:,-1]
 
+    #############################################
+    # LINEAR REGRESSION USING CUSTOM CODE (Gradient Descent)
+    #############################################
     # Scale the data
     scaler = StandardScaler()
     X = scaler.fit_transform(X)
@@ -112,16 +115,26 @@ if __name__ == "__main__":
     lr = LinearRegressor()
     lr.fit(X,y,0.001,10000)
 
-
-    # Linear Regression using scikit learn
+    #############################################
+    # LINEAR RGRESSION USING SCIKIT LEARN
+    #############################################
 
     scaler = sklearnStandardScalar()
     # Fit on training data only and transform it
     X_train_scaled = scaler.fit_transform(X)
 
-    # 4. Initialize and train the Linear Regression model
+    # Initialize and train the Linear Regression model
     model = LinearRegression()
     model.fit(X_train_scaled, y)
+
+
+    #############################################
+    # LINEAR REGRESSION USING NORMAL EQUATION
+    #############################################
+    
+    X_with_bias = np.hstack((np.ones((X.shape[0], 1)), X))
+
+    weights = np.linalg.inv(X_with_bias.T @ X_with_bias) @ X_with_bias.T @ y
 
     # 6. View model parameters
     print("____________________________________")
@@ -135,6 +148,12 @@ if __name__ == "__main__":
     print("____________________________________")
     print(lr.W)
     print(lr.b)
+
+
+    print("____________________________________")
+    print("FROM NORMAL EQUATION")
+    print("____________________________________")
+    print(weights)
 
     
 
