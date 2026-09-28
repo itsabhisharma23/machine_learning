@@ -1,8 +1,8 @@
-# Ridge and Lasso Regularization from Scratch
+# Ridge, Lasso and Elastic Net Regularization from Scratch
 
-From-scratch implementations of Ridge (L2) and Lasso (L1) regression built with
-`numpy`. Both are cross-checked against scikit-learn's `Ridge` and `Lasso` on
-the same data.
+From-scratch implementations of Ridge (L2), Lasso (L1) and Elastic Net (L1 + L2)
+regression built with `numpy`. Each is cross-checked against scikit-learn's
+`Ridge`, `Lasso` and `ElasticNet` on the same data.
 
 ## Contents
 
@@ -12,6 +12,9 @@ the same data.
 - `LassoRegularizer.py`
   - `LassoRegularizer`: fits Lasso regression with proximal gradient descent
     (gradient step followed by soft-thresholding).
+- `ElasticNet.py`
+  - `ElasticNetRegularizer`: fits Elastic Net regression with proximal
+    gradient descent (soft-thresholding for L1, then scaling for L2).
 
 ## Why regularize?
 
@@ -31,7 +34,7 @@ cost = data error (MSE) + lambda * penalty(W)
 - The bias `b` is **not** penalized. It only shifts predictions up or down,
   and shrinking it would just pull predictions toward 0.
 - Features should be on the same scale (standardized), because the penalty
-  treats every weight equally. Both demos run `StandardScaler` first.
+  treats every weight equally. All demos run `StandardScaler` first.
 
 ### Ridge (L2)
 
@@ -66,19 +69,36 @@ penalty(W) = sum(|W|)
   instead of settling there). This code uses proximal gradient descent
   instead.
 
+### Elastic Net (L1 + L2)
+
+The penalty is a weighted mix of both:
+
+```
+penalty(W) = l1_ratio * sum(|W|) + ((1 - l1_ratio) / 2) * sum(W^2)
+```
+
+- `l1_ratio` sets the mix. `l1_ratio = 1` is Lasso, `l1_ratio = 0` is Ridge.
+- Keeps Lasso's sparsity (exact zeros) while the L2 part keeps it stable
+  with correlated features. Lasso tends to pick one feature from a correlated
+  group at random; Elastic Net tends to keep or drop the group together.
+- Useful when there are many features, some of them correlated, and you
+  still want feature selection.
+- Like Lasso, it has no closed-form solution because of the `|w|` term.
+
 ### Side by side
 
-|                      | Ridge (L2)                   | Lasso (L1)                          |
-|----------------------|------------------------------|-------------------------------------|
-| Penalty              | `sum(W^2)`                   | `sum(abs(W))`                       |
-| Effect on weights    | Shrinks all, rarely to zero  | Shrinks, sets many to exactly zero  |
-| Feature selection    | No                           | Yes                                 |
-| Closed-form solution | Yes                          | No                                  |
-| Solver in this repo  | Normal equation or GD        | Proximal GD (soft-thresholding)     |
+|                      | Ridge (L2)                   | Lasso (L1)                          | Elastic Net (L1 + L2)                    |
+|----------------------|------------------------------|-------------------------------------|------------------------------------------|
+| Penalty              | `sum(W^2)`                   | `sum(abs(W))`                       | Mix of both, set by `l1_ratio`           |
+| Effect on weights    | Shrinks all, rarely to zero  | Shrinks, sets many to exactly zero  | Shrinks, sets some to exactly zero       |
+| Feature selection    | No                           | Yes                                 | Yes                                      |
+| Correlated features  | Spreads weight across them   | Picks one arbitrarily               | Keeps/drops them as a group              |
+| Closed-form solution | Yes                          | No                                  | No                                       |
+| Solver in this repo  | Normal equation or GD        | Proximal GD (soft-thresholding)     | Proximal GD (soft-threshold + L2 scale)  |
 
 ## How the code works
 
-In both classes, `alpha` is the **learning rate** and `lam` is the
+In all three classes, `alpha` is the **learning rate** and `lam` is the
 **regularization strength** (`lambda`). scikit-learn names the regularization
 strength `alpha`, so `lam` here corresponds to sklearn's `alpha`.
 
@@ -166,6 +186,44 @@ This update minimizes the same objective as `sklearn.linear_model.Lasso`:
 
 The cost is printed 5 times over the run.
 
+### `ElasticNetRegularizer.fit(X, y, alpha, lam, l1_ratio=0.5, iterations=1000)`
+
+Also uses proximal gradient descent. `lam` is split into the two penalties:
+
+```
+l1 = lambda * l1_ratio
+l2 = lambda * (1 - l1_ratio)
+```
+
+Each iteration:
+
+1. **Gradient step on the MSE part only**, same as Lasso:
+
+   ```
+   W_temp = W - alpha * dW
+   ```
+
+2. **Proximal step for the L1 + L2 penalty**:
+
+   ```
+   W = soft_threshold(W_temp, alpha * l1) / (1 + alpha * l2)
+   ```
+
+   - Soft-thresholding handles the L1 part and creates exact zeros.
+   - Dividing by `(1 + alpha * l2)` handles the L2 part, shrinking the
+     surviving weights a little more (the proximal form of weight decay).
+
+The bias gets an ordinary gradient update and is not regularized.
+
+This minimizes the same objective as `sklearn.linear_model.ElasticNet`
+(where `lam` is sklearn's `alpha`):
+
+```
+(1/2m) * sum((y_hat - y)^2) + l1 * sum(|W|) + (l2/2) * sum(W^2)
+```
+
+The cost is printed 5 times over the run.
+
 ### Shared methods
 
 - `predict(X)`: returns `X @ W + b`. The Ridge version also takes an unused
@@ -178,6 +236,7 @@ The cost is printed 5 times over the run.
 from sklearn.preprocessing import StandardScaler
 from RidgeRegularizer import RidgeRegularizer
 from LassoRegularizer import LassoRegularizer
+from ElasticNet import ElasticNetRegularizer
 
 X = StandardScaler().fit_transform(X)
 
@@ -194,6 +253,11 @@ ridge.get_weights()
 lasso = LassoRegularizer()
 lasso.fit(X, y, alpha=0.01, lam=0.1, iterations=5000)
 lasso.get_weights()
+
+# Elastic Net: proximal gradient descent, 50/50 L1-L2 mix
+enet = ElasticNetRegularizer()
+enet.fit(X, y, alpha=0.01, lam=0.01, l1_ratio=0.5, iterations=5000)
+enet.get_weights()
 ```
 
 ## Running the demos
@@ -201,9 +265,10 @@ lasso.get_weights()
 ```bash
 python3 RidgeRegularizer.py
 python3 LassoRegularizer.py
+python3 ElasticNet.py
 ```
 
-Both demos generate random data (3000 rows, 39 features, seed 45),
+All demos generate random data (3000 rows, 39 features, seed 45),
 standardize it, and compare against scikit-learn:
 
 - **Ridge:** the normal equation's weights match `sklearn.linear_model.Ridge(alpha=1.0)`
@@ -213,3 +278,8 @@ standardize it, and compare against scikit-learn:
   is exactly `0` and the bias is about `0.5009`. That result is expected: the
   target is random noise, unrelated to the features, so Lasso correctly
   drops all of them and predicts the mean of `y`.
+- **Elastic Net:** matches `sklearn.linear_model.ElasticNet(alpha=0.01,
+  l1_ratio=0.5)` to about 7 decimal places, with a bias of about `0.5009`.
+  The penalty here is much weaker than the Lasso demo's, so instead of
+  zeroing everything it keeps a handful of small non-zero weights and sets
+  the rest to exactly `0`.
